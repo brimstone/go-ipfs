@@ -1,10 +1,15 @@
-FROM golang:1.9-stretch
+FROM golang:1.10-rc-alpine
 MAINTAINER Lars Gierth <lgierth@ipfs.io>
 
 # There is a copy of this Dockerfile called Dockerfile.fast,
 # which is optimized for build time, instead of image size.
 #
 # Please keep these two Dockerfiles in sync.
+
+RUN apk -U add wget git make gcc musl-dev
+
+RUN go get -v -u github.com/whyrusleeping/gx
+RUN go get -v -u github.com/whyrusleeping/gx-go
 
 ENV GX_IPFS ""
 ENV SRC_DIR /go/src/github.com/ipfs/go-ipfs
@@ -17,39 +22,17 @@ COPY . $SRC_DIR
 RUN cd $SRC_DIR \
   && mkdir .git/objects \
   && ([ -z "$GX_IPFS" ] || echo $GX_IPFS > /root/.ipfs/api) \
-  && make build
-
-# Get su-exec, a very minimal tool for dropping privileges,
-# and tini, a very minimal init daemon for containers
-ENV SUEXEC_VERSION v0.2
-ENV TINI_VERSION v0.16.1
-RUN set -x \
-  && cd /tmp \
-  && git clone https://github.com/ncopa/su-exec.git \
-  && cd su-exec \
-  && git checkout -q $SUEXEC_VERSION \
-  && make \
-  && cd /tmp \
-  && wget -q -O tini https://github.com/krallin/tini/releases/download/$TINI_VERSION/tini \
-  && chmod +x tini
-
-# Get the TLS CA certificates, they're not provided by busybox.
-RUN apt-get update && apt-get install -y ca-certificates
+  && make build IPFS_GX_USE_GLOBAL=1 GOFLAGS='-ldflags "-linkmode external -extldflags \"-static\" -s -w"'
 
 # Now comes the actual target image, which aims to be as small as possible.
-FROM busybox:1-glibc
+FROM alpine
 MAINTAINER Lars Gierth <lgierth@ipfs.io>
 
 # Get the ipfs binary, entrypoint script, and TLS CAs from the build container.
 ENV SRC_DIR /go/src/github.com/ipfs/go-ipfs
 COPY --from=0 $SRC_DIR/cmd/ipfs/ipfs /usr/local/bin/ipfs
 COPY --from=0 $SRC_DIR/bin/container_daemon /usr/local/bin/start_ipfs
-COPY --from=0 /tmp/su-exec/su-exec /sbin/su-exec
-COPY --from=0 /tmp/tini /sbin/tini
-COPY --from=0 /etc/ssl/certs /etc/ssl/certs
-
-# This shared lib (part of glibc) doesn't seem to be included with busybox.
-COPY --from=0 /lib/x86_64-linux-gnu/libdl-2.24.so /lib/libdl.so.2
+RUN apk -U add su-exec tini
 
 # Ports for Swarm TCP, Swarm uTP, API, Gateway, Swarm Websockets
 EXPOSE 4001
