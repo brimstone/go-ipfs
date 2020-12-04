@@ -107,6 +107,10 @@ supported:
 	@for p in ${SUPPORTED_PLATFORMS}; do echo $$p; done
 .PHONY: supported
 
+docker:
+	docker build --pull --build-arg VCS_REF="$(shell git rev-parse --short HEAD)" --build-arg BUILD_DATE="$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")" -t brimstone/ipfs .
+.PHONY: docker
+
 help:
 	@echo 'DEPENDENCY TARGETS:'
 	@echo ''
